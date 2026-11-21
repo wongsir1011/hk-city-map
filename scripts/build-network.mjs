@@ -240,7 +240,7 @@ if (!race || race.stations.join(',') !== 'UNI,RAC,SHT') {
   throw new Error(`Racecourse branch: ${race?.stations}`)
 }
 
-const trackSegments = await fetchTrackSegments()
+const { segments: trackSegments, routes } = await fetchTrackSegments()
 
 const network = {
   builtAt: new Date().toISOString(),
@@ -248,6 +248,7 @@ const network = {
   stationCount: stationList.length,
   stations: stationList,
   segments: trackSegments,
+  routes,
 }
 
 function perpendicularDistance(point, start, end) {
@@ -297,12 +298,25 @@ function pathLength(path) {
 
 async function fetchTrackSegments() {
   const query = `[out:json][timeout:180];relation["type"="route"]["route"="subway"]["network"="港鐵 MTR"]["ref"~"^(AEL|TCL|TML|TKL|EAL|SIL|TWL|ISL|KTL|DRL)$"](22.13,113.80,22.58,114.50);out geom;`
-  const response = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: { 'User-Agent': userAgent, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-  })
-  if (!response.ok) throw new Error(`OpenStreetMap tracks returned ${response.status}`)
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ]
+  let response
+  let lastStatus = 0
+  for (const endpoint of endpoints) {
+    const attempt = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'User-Agent': userAgent, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    })
+    if (attempt.ok) {
+      response = attempt
+      break
+    }
+    lastStatus = attempt.status
+  }
+  if (!response) throw new Error(`OpenStreetMap tracks returned ${lastStatus}`)
   const data = await response.json()
   const relations = data.elements ?? []
   if (relations.length < 10) throw new Error(`Expected MTR route relations, received ${relations.length}`)
@@ -366,7 +380,123 @@ async function fetchTrackSegments() {
       .map((segment) => `${segment.line} ${segment.paths.reduce((sum, path) => sum + pathLength(path), 0).toFixed(1)}`)
       .join(', '),
   )
-  return exported
+  const routes = selectRoutes(relations)
+  if (routes.filter((route) => !route.race).length < LINE_ORDER.length) {
+    throw new Error('A line is missing a continuous route for train movement')
+  }
+  console.log(
+    'Routes:',
+    routes.map((route) => `${route.line} ${route.from}->${route.to}${route.race ? ' race' : ''} ${route.km.toFixed(1)}km`).join(', '),
+  )
+  return {
+    segments: exported,
+    routes: routes.map((route) => ({
+      line: route.line,
+      from: route.from,
+      to: route.to,
+      race: route.race,
+      coordinates: route.coordinates,
+    })),
+  }
+}
+
+function endpointCode(tags, which) {
+  const ref = tags[`${which}:ref`]
+  if (ref && stations.has(ref)) return ref
+  const zh = (tags[`${which}:zh`] || '').replace(/站$/u, '')
+  const en = (tags[`${which}:en`] || '').toLowerCase()
+  for (const station of stations.values()) {
+    if (zh && station.nameZh === zh) return station.code
+    if (en && station.nameEn.toLowerCase() === en) return station.code
+  }
+  const token = String(tags[which] || '').split(' ')[0]
+  for (const station of stations.values()) {
+    if (token && station.nameZh === token) return station.code
+  }
+  return ''
+}
+
+function stitchRelation(relation) {
+  const current = []
+  const paths = []
+  const flush = () => {
+    if (current.length > 1) paths.push([...current])
+    current.length = 0
+  }
+  for (const member of relation.members ?? []) {
+    if (member.type !== 'way' || !member.geometry || member.geometry.length < 2) continue
+    const role = member.role ?? ''
+    if (role.startsWith('platform') || role.startsWith('stop')) continue
+    let points = member.geometry.map((point) => [Number(point.lon.toFixed(6)), Number(point.lat.toFixed(6))])
+    if (role === 'backward') points.reverse()
+    if (current.length === 0) {
+      current.push(...points)
+      continue
+    }
+    const end = current[current.length - 1]
+    const toStart = kmBetween(end, points[0])
+    const toEnd = kmBetween(end, points[points.length - 1])
+    if (toEnd < toStart) points = [...points].reverse()
+    const gap = Math.min(toStart, toEnd)
+    if (gap > 0.3) {
+      flush()
+      current.push(...points)
+      continue
+    }
+    current.push(...points.slice(1))
+  }
+  flush()
+  paths.sort((a, b) => pathLength(b) - pathLength(a))
+  return paths[0] ?? []
+}
+
+function selectRoutes(relations) {
+  const candidates = []
+  for (const relation of relations) {
+    const tags = relation.tags ?? {}
+    const line = tags.ref
+    if (!LINE_ORDER.includes(line)) continue
+    const via = `${tags.via ?? ''} ${tags['via:zh'] ?? ''} ${tags['via:en'] ?? ''}`
+    const coordinates = decimate(stitchRelation(relation), 0.04)
+    const from = endpointCode(tags, 'from')
+    const to = endpointCode(tags, 'to')
+    if (!from || !to || from === to || coordinates.length < 8) continue
+    candidates.push({
+      line,
+      from,
+      to,
+      race: /馬場|Racecourse/i.test(via),
+      km: pathLength(coordinates),
+      coordinates,
+    })
+  }
+  const chosen = []
+  for (const line of LINE_ORDER) {
+    const normal = candidates.filter((route) => route.line === line && !route.race).sort((a, b) => b.km - a.km)
+    const covered = new Set()
+    for (const route of normal) {
+      const novel = [route.from, route.to].filter((code) => !covered.has(code))
+      if (novel.length === 0) continue
+      chosen.push(route)
+      covered.add(route.from)
+      covered.add(route.to)
+    }
+    const race = candidates
+      .filter((route) => route.line === line && route.race)
+      .sort((a, b) => b.km - a.km)[0]
+    if (race) chosen.push(race)
+  }
+  return chosen
+}
+
+function decimate(points, minKm) {
+  if (points.length < 3) return points
+  const kept = [points[0]]
+  for (let index = 1; index < points.length - 1; index += 1) {
+    if (kmBetween(kept[kept.length - 1], points[index]) >= minKm) kept.push(points[index])
+  }
+  kept.push(points[points.length - 1])
+  return kept
 }
 
 const output = new URL('../public/data/network.json', import.meta.url)

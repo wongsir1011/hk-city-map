@@ -14,12 +14,31 @@ export interface LineSegment {
   paths: [number, number][][]
 }
 
+export interface TrackRoute {
+  line: string
+  from: string
+  to: string
+  race: boolean
+  coordinates: [number, number][]
+}
+
 export interface Network {
   builtAt: string
   stationListModified: string | null
   stationCount: number
   stations: Station[]
   segments: LineSegment[]
+  routes: TrackRoute[]
+}
+
+export interface MovingTrain {
+  id: string
+  line: string
+  lng: number
+  lat: number
+  dest: string
+  next: string
+  minutes: number
 }
 
 export interface CameraSite {

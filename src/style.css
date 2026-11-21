@@ -91,9 +91,9 @@ h3 { margin-top: 14px; font-size: 1rem; }
   border-right: 1px solid var(--line);
 }
 
-#hint, #map-note, #load-note, .english, .fine, .official { color: var(--muted); }
+#hint, #map-note, #load-note, #train-note, .english, .fine, .official { color: var(--muted); }
 
-#hint, #map-note, #load-note, .fine, .official, .english { margin: 8px 0 0; }
+#hint, #map-note, #load-note, #train-note, .fine, .official, .english { margin: 8px 0 0; }
 
 #search-form, #camera-search-form { margin-top: 16px; }
 

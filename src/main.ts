@@ -5,7 +5,8 @@ import { fetchCameras, loadPhoto } from './cameras'
 import { createCityMap } from './map'
 import { renderCameraResults, renderDetail, renderLegend, renderSearchResults, type DetailState } from './panel'
 import { fetchSchedule } from './schedule'
-import type { CameraSite, Network, Station } from './types'
+import { startTrains, type TrainStatus } from './trains'
+import type { CameraSite, MovingTrain, Network, Station } from './types'
 import './style.css'
 
 const detail = document.querySelector<HTMLElement>('#detail')
@@ -22,6 +23,8 @@ const mapCanvas = document.querySelector<HTMLElement>('#map-canvas')
 const mtrToggle = document.querySelector<HTMLButtonElement>('#toggle-mtr')
 const cameraToggle = document.querySelector<HTMLButtonElement>('#toggle-cam')
 const fitButton = document.querySelector<HTMLButtonElement>('#fit-hk')
+const trainToggle = document.querySelector<HTMLButtonElement>('#toggle-trains')
+const trainNote = document.querySelector<HTMLElement>('#train-note')
 
 function requireElement<T extends Element>(element: T | null, name: string): T {
   if (!element) throw new Error(`Missing ${name}`)
@@ -42,11 +45,18 @@ const mapEl = requireElement(mapCanvas, 'map')
 const mtrToggleEl = requireElement(mtrToggle, 'mtr toggle')
 const cameraToggleEl = requireElement(cameraToggle, 'camera toggle')
 const fitButtonEl = requireElement(fitButton, 'fit button')
+const trainToggleEl = requireElement(trainToggle, 'train toggle')
+const trainNoteEl = requireElement(trainNote, 'train status')
 
 function isNetwork(value: unknown): value is Network {
   if (!value || typeof value !== 'object') return false
   const record = value as Partial<Network>
-  return Array.isArray(record.stations) && Array.isArray(record.segments) && record.stations.length > 0
+  return (
+    Array.isArray(record.stations) &&
+    Array.isArray(record.segments) &&
+    Array.isArray(record.routes) &&
+    record.stations.length > 0
+  )
 }
 
 async function loadNetwork(): Promise<Network | null> {
@@ -64,6 +74,13 @@ function stationName(stations: Map<string, Station>, code: string): string {
   return stations.get(code)?.nameZh ?? code
 }
 
+function describeTrains(status: TrainStatus): string {
+  if (status === 'zoomed-out') return '放大地圖後，列車會沿路軌移動。'
+  if (status === 'loading') return '正在估算列車位置…'
+  if (status === 'limited') return '暫時未能更新列車位置。列車會暫停，稍後再試。'
+  return '列車位置按到站時間估算，大約每 30 秒更新，並非即時定位。'
+}
+
 async function main(): Promise<void> {
   renderLegend(legendEl)
   const network = await loadNetwork()
@@ -75,6 +92,7 @@ async function main(): Promise<void> {
 
   const stations = new Map(network.stations.map((station) => [station.code, station]))
   let mapFailed = false
+  let trains: ReturnType<typeof startTrains> | undefined
   const city = createCityMap(mapEl, network, {
     onStation: (station) => {
       const line = station.lines[0]
@@ -83,6 +101,8 @@ async function main(): Promise<void> {
     onCamera: (site) => {
       void openCamera(site)
     },
+    onTrain: (train) => openTrain(train),
+    onView: () => trains?.onView(),
     onMapError: () => {
       if (mapFailed) return
       mapFailed = true
@@ -130,6 +150,14 @@ async function main(): Promise<void> {
     const result = await fetchSchedule(line, station.code)
     if (token !== requestId) return
     show({ kind: 'station', station, line, result })
+  }
+
+  function openTrain(train: MovingTrain): void {
+    activeCamera = null
+    revokePhoto()
+    city.selectCamera(null)
+    city.selectStation(null)
+    show({ kind: 'train', train })
   }
 
   async function openCamera(site: CameraSite): Promise<void> {
@@ -193,6 +221,21 @@ async function main(): Promise<void> {
     city.setCamerasVisible(visible)
   })
   fitButtonEl.addEventListener('click', () => city.fitHongKong())
+  trainToggleEl.addEventListener('click', () => {
+    const visible = trainToggleEl.getAttribute('aria-pressed') !== 'true'
+    trainToggleEl.setAttribute('aria-pressed', String(visible))
+    city.setTrainsVisible(visible)
+    trains?.setEnabled(visible)
+    if (!visible) trainNoteEl.textContent = ''
+  })
+  trains = startTrains(
+    network,
+    () => city.getViewport(),
+    (moving) => city.setTrains(moving),
+    (status) => {
+      if (trainToggleEl.getAttribute('aria-pressed') === 'true') trainNoteEl.textContent = describeTrains(status)
+    },
+  )
 
   loadNoteEl.textContent = '正在載入快拍點…'
   try {

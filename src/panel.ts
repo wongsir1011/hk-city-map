@@ -1,6 +1,6 @@
 import { LINE_ORDER, lineStyle } from './lines'
 import { formatClock, formatDataTime, formatWait } from './schedule'
-import type { CameraSite, ScheduleResult, Station, Train } from './types'
+import type { CameraSite, MovingTrain, ScheduleResult, Station, Train } from './types'
 
 export type DetailState =
   | { kind: 'hint' }
@@ -8,6 +8,7 @@ export type DetailState =
   | { kind: 'station'; station: Station; line: string; result: ScheduleResult }
   | { kind: 'camera-loading'; site: CameraSite }
   | { kind: 'camera'; site: CameraSite; photoUrl: string | null }
+  | { kind: 'train'; train: MovingTrain }
 
 interface DetailActions {
   onLine: (line: string) => void
@@ -261,6 +262,23 @@ function renderStationBody(
 
 export function renderDetail(root: HTMLElement, state: DetailState, actions: DetailActions): void {
   root.replaceChildren()
+
+  if (state.kind === 'train') {
+    const style = lineStyle(state.train.line)
+    root.append(el('p', 'eyebrow', '估算列車'))
+    root.append(el('h2', undefined, style.nameZh))
+    root.append(el('p', undefined, `往${actions.stationName(state.train.dest)}`))
+    root.append(el('p', undefined, `下一站 ${actions.stationName(state.train.next)}`))
+    root.append(
+      el(
+        'p',
+        'loading',
+        state.train.minutes <= 0 ? '即將到達下一站。' : `大約 ${state.train.minutes} 分鐘到達下一站。`,
+      ),
+    )
+    root.append(el('p', 'fine', '位置按到站時間估算，大約每 30 秒更新，並非即時定位。'))
+    return
+  }
 
   if (state.kind === 'hint') {
     root.append(

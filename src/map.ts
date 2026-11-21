@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl'
 import type { FeatureCollection, LineString, Point } from 'geojson'
 import { lineStyle } from './lines'
-import type { CameraSite, LineSegment, Network, Station } from './types'
+import type { CameraSite, LineSegment, MovingTrain, Network, Station } from './types'
 
 const HONG_KONG: maplibregl.LngLatBoundsLike = [
   [113.83, 22.18],
@@ -15,7 +15,9 @@ const LABEL_ZOOM = 12
 interface MapHandlers {
   onStation: (station: Station) => void
   onCamera: (site: CameraSite) => void
+  onTrain: (train: MovingTrain) => void
   onMapError: () => void
+  onView: () => void
 }
 
 export interface CityMap {
@@ -26,6 +28,17 @@ export interface CityMap {
   focusCamera: (site: CameraSite) => void
   selectStation: (code: string | null) => void
   selectCamera: (key: string | null) => void
+  setTrains: (trains: MovingTrain[]) => void
+  setTrainsVisible: (visible: boolean) => void
+  getViewport: () => {
+    zoom: number
+    west: number
+    south: number
+    east: number
+    north: number
+    centerLng: number
+    centerLat: number
+  }
   fitHongKong: () => void
 }
 
@@ -93,6 +106,9 @@ export function createCityMap(
   let selectedCamera: string | null = null
   let styleReady = false
   let pendingCameras: CameraSite[] | null = null
+  let trainsVisible = true
+  let trainFeatures: FeatureCollection<Point> = { type: 'FeatureCollection', features: [] }
+  const trainRecords = new Map<string, MovingTrain>()
 
   const map = new maplibregl.Map({
     container,
@@ -234,6 +250,20 @@ export function createCityMap(
         'circle-stroke-width': ['case', ['boolean', ['feature-state', 'selected'], false], 5, 2.5],
       },
     })
+    map.addSource('trains', { type: 'geojson', data: trainFeatures })
+    map.addLayer({
+      id: 'train-point',
+      type: 'circle',
+      source: 'trains',
+      paint: {
+        'circle-radius': 7,
+        'circle-color': ['get', 'color'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fffdf8',
+      },
+    })
+    if (!trainsVisible) setVisibility(['train-point'], false)
+
     map.addLayer({
       id: 'station-hit',
       type: 'circle',
@@ -249,7 +279,7 @@ export function createCityMap(
     if (!camerasVisible) setVisibility(CAMERA_LAYERS, false)
     applySelection()
     syncLabels()
-    for (const layer of ['station-hit', 'camera-point', 'camera-cluster']) {
+    for (const layer of ['train-point', 'station-hit', 'camera-point', 'camera-cluster']) {
       map.on('mouseenter', layer, () => {
         map.getCanvas().style.cursor = 'pointer'
       })
@@ -260,9 +290,18 @@ export function createCityMap(
   })
 
   map.on('zoom', syncLabels)
+  map.on('moveend', () => handlers.onView())
 
   map.on('click', (event) => {
     if (!styleReady) return
+    if (trainsVisible && map.getLayer('train-point')) {
+      const trainHit = map.queryRenderedFeatures(event.point, { layers: ['train-point'] })[0]
+      const train = trainRecords.get(String(trainHit?.properties?.id ?? ''))
+      if (train) {
+        handlers.onTrain(train)
+        return
+      }
+    }
     const stationHit = map.queryRenderedFeatures(event.point, { layers: ['station-hit'] })[0]
     if (stationHit && mtrVisible) {
       const code = String(stationHit.properties?.code ?? '')
@@ -348,6 +387,42 @@ export function createCityMap(
       }
       selectedCamera = key
       applySelection()
+    },
+    setTrains(trains) {
+      trainRecords.clear()
+      trainFeatures = {
+        type: 'FeatureCollection',
+        features: trains.map((train) => {
+          trainRecords.set(train.id, train)
+          return {
+            type: 'Feature' as const,
+            properties: {
+              id: train.id,
+              color: lineStyle(train.line).color,
+            },
+            geometry: { type: 'Point' as const, coordinates: [train.lng, train.lat] },
+          }
+        }),
+      }
+      const source = map.getSource('trains')
+      if (source instanceof maplibregl.GeoJSONSource) source.setData(trainFeatures)
+    },
+    setTrainsVisible(visible) {
+      trainsVisible = visible
+      setVisibility(['train-point'], visible)
+    },
+    getViewport() {
+      const bounds = map.getBounds()
+      const center = map.getCenter()
+      return {
+        zoom: map.getZoom(),
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+        centerLng: center.lng,
+        centerLat: center.lat,
+      }
     },
     fitHongKong() {
       map.fitBounds(HONG_KONG, { padding: 28, duration: motion() })

@@ -18,6 +18,7 @@
         <div class="tools">
           <button id="toggle-mtr" type="button" aria-pressed="true">港鐵</button>
           <button id="toggle-cam" type="button" aria-pressed="true">快拍</button>
+          <button id="toggle-trains" type="button" aria-pressed="true">列車</button>
           <button id="fit-hk" type="button">全港</button>
         </div>
       </header>
@@ -25,6 +26,7 @@
         <p id="hint">點選車站查看即將到站的班次。搜尋或點選快拍點，查看該處最新路面照片。</p>
         <p id="map-note" role="status" aria-live="polite"></p>
         <p id="load-note" role="status" aria-live="polite">正在準備地圖…</p>
+        <p id="train-note" role="status" aria-live="polite"></p>
         <form id="search-form">
           <label for="station-search">搜尋車站</label>
           <input id="station-search" name="station" type="search" placeholder="例如金鐘、中環" autocomplete="off" />
@@ -42,7 +44,7 @@
         <section class="legend-block">
           <h2>十條港鐵綫</h2>
           <ul id="legend"></ul>
-          <p class="fine">路綫跟隨公開地圖上的路軌。馬場站的虛線是賽馬日繞過火炭、經大學站與沙田站之間的路段。</p>
+          <p class="fine">路綫跟隨公開地圖上的路軌。馬場站的虛線是賽馬日繞過火炭、經大學站與沙田站之間的路段。列車位置按到站時間估算，大約每 30 秒更新，並非即時定位。</p>
         </section>
         <section class="sources">
           <h2>資料出處</h2>
