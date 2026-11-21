@@ -125,21 +125,49 @@ function pickRoute(routes: IndexedRoute[], line: string, dest: string, next: str
   )
 }
 
-function approachPoint(route: IndexedRoute, next: string, dest: string, arrivalMs: number, now: number): { lng: number; lat: number } | null {
+function continuePast(
+  route: IndexedRoute,
+  nextIndex: number,
+  nextStop: { along: number },
+  forward: boolean,
+  remaining: number,
+): { lng: number; lat: number } | null {
+  const direction = forward ? 1 : -1
+  const following = route.stations[nextIndex + direction]
+  const elapsed = -remaining
+  if (!following) {
+    if (elapsed > 45_000) return null
+    return pointAt(route.route.coordinates, route.cum, nextStop.along)
+  }
+  const hopKm = Math.abs(following.along - nextStop.along)
+  const travelled = Math.min(hopKm, (elapsed / 3_600_000) * SPEED_KMH)
+  if (travelled >= hopKm - 0.03) return null
+  return pointAt(route.route.coordinates, route.cum, nextStop.along + direction * travelled)
+}
+
+export function approachPoint(
+  route: IndexedRoute,
+  next: string,
+  dest: string,
+  arrivalMs: number,
+  now: number,
+): { lng: number; lat: number } | null {
   const nextIndex = route.stations.findIndex((station) => station.code === next)
   const nextStop = route.stations[nextIndex]
   if (!nextStop) return null
   const destination = route.stations.find((station) => station.code === dest)
   const forward = !destination || destination.along >= nextStop.along
   const previous = forward ? route.stations[nextIndex - 1] : route.stations[nextIndex + 1]
+  const remaining = arrivalMs - now
   if (!previous) {
-    if (Math.abs(arrivalMs - now) > 3 * 60 * 1000) return null
-    return pointAt(route.route.coordinates, route.cum, nextStop.along)
+    if (remaining > 3 * 60 * 1000) return null
+    if (remaining > 0) return pointAt(route.route.coordinates, route.cum, nextStop.along)
+    return continuePast(route, nextIndex, nextStop, forward, remaining)
   }
   const segmentKm = Math.abs(nextStop.along - previous.along)
   const typicalMs = (segmentKm / SPEED_KMH) * 3600 * 1000
-  const remaining = arrivalMs - now
   if (remaining > typicalMs * 1.3) return null
+  if (remaining <= 0) return continuePast(route, nextIndex, nextStop, forward, remaining)
   const ratio = Math.max(0, Math.min(1, 1 - remaining / Math.max(typicalMs, 1)))
   const along = previous.along + ratio * (nextStop.along - previous.along)
   return pointAt(route.route.coordinates, route.cum, along)
@@ -177,12 +205,41 @@ export function startTrains(
   const shown = new Map<string, { lng: number; lat: number }>()
 
   function publish(now = Date.now()): void {
-    const trains: MovingTrain[] = []
-    const alive = new Set<string>()
+    const placed: { sighting: Sighting; target: { lng: number; lat: number }; along: number; progress: number }[] = []
     for (const sighting of sightings) {
       const target = approachPoint(sighting.route, sighting.next, sighting.dest, sighting.arrivalMs, now)
       sighting.target = target
       if (!target) continue
+      const along = project(sighting.route.route.coordinates, sighting.route.cum, target.lng, target.lat).along
+      const destination = sighting.route.stations.find((station) => station.code === sighting.dest)
+      placed.push({
+        sighting,
+        target,
+        along,
+        progress: destination ? -Math.abs(destination.along - along) : along,
+      })
+    }
+    const kept: typeof placed = []
+    const groups = new Map<string, typeof placed>()
+    for (const item of placed) {
+      const key = `${item.sighting.line}|${item.sighting.dest}`
+      const list = groups.get(key) ?? []
+      list.push(item)
+      groups.set(key, list)
+    }
+    for (const list of groups.values()) {
+      list.sort((a, b) => b.progress - a.progress)
+      const accepted: typeof placed = []
+      for (const item of list) {
+        if (accepted.some((other) => Math.abs(other.along - item.along) < 1.2)) continue
+        accepted.push(item)
+        kept.push(item)
+      }
+    }
+    const trains: MovingTrain[] = []
+    const alive = new Set<string>()
+    for (const item of kept) {
+      const { sighting, target } = item
       const current = shown.get(sighting.id)
       const point = current
         ? {
@@ -192,14 +249,29 @@ export function startTrains(
         : target
       shown.set(sighting.id, point)
       alive.add(sighting.id)
+      let next = sighting.next
+      let minutes = Math.max(0, Math.round((sighting.arrivalMs - now) / 60000))
+      if (sighting.arrivalMs <= now) {
+        const nextIndex = sighting.route.stations.findIndex((station) => station.code === sighting.next)
+        const nextStop = sighting.route.stations[nextIndex]
+        const destination = sighting.route.stations.find((station) => station.code === sighting.dest)
+        const forward = !destination || !nextStop || destination.along >= nextStop.along
+        const following = sighting.route.stations[nextIndex + (forward ? 1 : -1)]
+        if (following && nextStop) {
+          next = following.code
+          const hopKm = Math.abs(following.along - nextStop.along)
+          const travelled = ((now - sighting.arrivalMs) / 3_600_000) * SPEED_KMH
+          minutes = Math.max(0, Math.round(((hopKm - travelled) / SPEED_KMH) * 60))
+        }
+      }
       trains.push({
         id: sighting.id,
         line: sighting.line,
         lng: point.lng,
         lat: point.lat,
         dest: sighting.dest,
-        next: sighting.next,
-        minutes: Math.max(0, Math.round((sighting.arrivalMs - now) / 60000)),
+        next,
+        minutes,
       })
     }
     for (const id of shown.keys()) {

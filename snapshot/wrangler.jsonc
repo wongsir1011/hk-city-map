@@ -14,5 +14,11 @@
       "id": "7e3d8b1d29ce40149de5bd4b3f203782"
     }
   ],
+  "services": [
+    {
+      "binding": "COLLECTOR",
+      "service": "hk-train-collector"
+    }
+  ],
   "workers_dev": true
 }

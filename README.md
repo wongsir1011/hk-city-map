@@ -37,7 +37,7 @@ npm run prepare-data
 
 路綫形狀來自 OpenStreetMap 的港鐵路軌，車站位置仍來自地政總署。快拍名單打包在 `public/data/cameras.json`，照片仍在點開時向運輸署讀取。放大到街道範圍後，地圖按到站時間在路軌上估算列車位置，並非即時定位。
 
-`public/runtime.json` 的 `trainSnapshotUrl` 若是一個 `https` 網址，所有訪客約每分鐘讀同一份全港快照。這個網址留空時，每人放大後約每 30 秒直接查詢畫面內最多 12 個車站。快照連續兩次讀不到，才退回這 12 次查詢。
+`public/runtime.json` 的 `trainSnapshotUrl` 若是一個 `https` 網址，所有訪客讀同一份全港快照。這個網址留空時，每人放大後約每 30 秒直接查詢畫面內最多 12 個車站。快照連續兩次讀不到，才退回這 12 次查詢。到站之後，列車按同樣速度繼續沿路軌走，不會停在月台。
 
 ## Cloudflare Workers
 
@@ -46,7 +46,7 @@ npm run prepare-data
 - 地圖：`https://hk-smart-city-map.hkcitymap.workers.dev`
 - 列車快照：`https://hk-train-snapshot.hkcitymap.workers.dev/trains.json`
 
-快照存在 Workers KV。免費方案每天大約 1,000 次寫入，所以程式每 2 分鐘更新 40 個車站路綫，大約 6 分鐘走完一輪。每位放大看列車的訪客，大約每分鐘向這個 Worker 讀一次，計入每天 100,000 次的免費額度。
+快照存在 Workers KV。每次更新都一次過查完全部車站路綫，再寫成一份檔。免費方案每天大約 1,000 次寫入，所以完整更新大約每 2 分鐘一次。每位放大看列車的訪客，大約每分鐘向這個 Worker 讀一次，計入每天 100,000 次的免費額度。
 
 帳戶目前沒有自己的網域，也未開啟 R2。人數大到每天超過 10 萬次讀取時，才需要把快照放到自己的網域後面做邊緣快取。那一步要 Workers 付費方案，最低每月 5 美元。
 

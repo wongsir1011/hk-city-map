@@ -1,0 +1,9 @@
+{
+  "name": "hk-train-collector",
+  "main": "src/collector.js",
+  "compatibility_date": "2026-11-21",
+  "observability": {
+    "enabled": false
+  },
+  "workers_dev": false
+}
