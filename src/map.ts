@@ -92,7 +92,7 @@ export function createCityMap(
 
   const map = new maplibregl.Map({
     container,
-    style: 'https://tiles.openfreemap.org/styles/positron',
+    style: 'https://tiles.openfreemap.org/styles/bright',
     bounds: HONG_KONG,
     fitBoundsOptions: { padding: 28 },
     minZoom: 9,

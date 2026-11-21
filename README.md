@@ -29,7 +29,7 @@ npm run prepare-data
 
 | 畫面 | 來源 |
 | --- | --- |
-| 底圖 | OpenFreeMap Positron，`https://tiles.openfreemap.org/styles/positron` |
+| 底圖 | OpenFreeMap Bright，`https://tiles.openfreemap.org/styles/bright` |
 | 車站名稱和順序 | 港鐵公開資料 `mtr_lines_and_stations.csv` |
 | 車站位置 | 地政總署港鐵站範圍，建立時轉成每個站一個點 |
 | 到站班次 | `https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php` |
