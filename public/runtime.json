@@ -1,3 +1,3 @@
 {
-  "trainSnapshotUrl": ""
+  "trainSnapshotUrl": "https://hk-train-snapshot.hkcitymap.workers.dev/trains.json"
 }

@@ -39,29 +39,20 @@ npm run prepare-data
 
 `public/runtime.json` 的 `trainSnapshotUrl` 若是一個 `https` 網址，所有訪客約每分鐘讀同一份全港快照。這個網址留空時，每人放大後約每 30 秒直接查詢畫面內最多 12 個車站。快照連續兩次讀不到，才退回這 12 次查詢。
 
-## 全港列車快照
+## Cloudflare Workers
 
-`snapshot/` 是獨立的定時程式，大約每分鐘向港鐵查完全部車站路綫，把結果寫進 R2 的 `trains.json`。地圖網站本身保持靜態，不代為轉發。
+地圖靜態檔和列車快照都在這個帳戶的 `hkcitymap.workers.dev`。
 
-這條路要一份你擁有的網域，以及 Cloudflare Workers 付費方案。付費方案最低每月 5 美元。請在帳戶把超額消費上限設為 0，避免人數上升時自動加價。網域費用是註冊商的年費。R2 每月寫入約 4 萬次，在免費額以內。
+- 地圖：`https://hk-smart-city-map.hkcitymap.workers.dev`
+- 列車快照：`https://hk-train-snapshot.hkcitymap.workers.dev/trains.json`
 
-`workers.dev` 和 `r2.dev` 每個訪客的讀取都會計費。網域要接到 R2，並加一條快取規則，把 `trains.json` 在邊緣快取 60 秒。JSON 預設不會被快取。不要開啟 Workers Caching，開啟後每次讀取都會計入 Worker 費用。
+快照存在 Workers KV。免費方案每天大約 1,000 次寫入，所以程式每 2 分鐘更新 40 個車站路綫，大約 6 分鐘走完一輪。每位放大看列車的訪客，大約每分鐘向這個 Worker 讀一次，計入每天 100,000 次的免費額度。
 
-免費方案每次最多 50 個對外請求，不足以一次查完約 121 個車站路綫，所以這個程式要用付費方案。
+帳戶目前沒有自己的網域，也未開啟 R2。人數大到每天超過 10 萬次讀取時，才需要把快照放到自己的網域後面做邊緣快取。那一步要 Workers 付費方案，最低每月 5 美元。
 
 ```bash
-node scripts/build-pairs.mjs
-cd snapshot
-npx wrangler@4 login
-npx wrangler@4 r2 bucket create hk-train-snapshot
-npx wrangler@4 r2 bucket cors set hk-train-snapshot --file cors.json --force
+npm run build
 npx wrangler@4 deploy
-```
-
-部署後，在 R2 的桶接上你的網域，快取規則選「符合快取」並把邊緣快取時間設為 60 秒。然後把 `https://你的網域/trains.json` 寫進 `public/runtime.json`，再重新發佈地圖。
-
-本機可以先跑一輪，看看快照內容：
-
-```bash
-npm run snapshot -- /tmp/trains.json
+cd snapshot
+npx wrangler@4 deploy
 ```

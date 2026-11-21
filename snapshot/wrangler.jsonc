@@ -6,15 +6,13 @@
     "enabled": false
   },
   "triggers": {
-    "crons": ["* * * * *"]
+    "crons": ["*/2 * * * *"]
   },
-  "r2_buckets": [
+  "kv_namespaces": [
     {
       "binding": "SNAPSHOTS",
-      "bucket_name": "hk-train-snapshot"
+      "id": "7e3d8b1d29ce40149de5bd4b3f203782"
     }
   ],
-  "limits": {
-    "subrequests": 200
-  }
+  "workers_dev": true
 }
