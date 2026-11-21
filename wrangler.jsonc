@@ -1,0 +1,10 @@
+{
+  "name": "hk-smart-city-map",
+  "compatibility_date": "2026-11-21",
+  "observability": {
+    "enabled": false
+  },
+  "assets": {
+    "directory": "./dist"
+  }
+}

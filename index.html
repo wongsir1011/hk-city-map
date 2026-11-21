@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="香港智慧城市地圖：查看港鐵到站班次和運輸署交通快拍。" />
+    <meta name="theme-color" content="#f3efe6" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>香港智慧城市地圖</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <div class="title-block">
+          <p class="eyebrow">香港</p>
+          <h1>智慧城市地圖</h1>
+        </div>
+        <div class="tools">
+          <button id="toggle-mtr" type="button" aria-pressed="true">港鐵</button>
+          <button id="toggle-cam" type="button" aria-pressed="true">快拍</button>
+          <button id="fit-hk" type="button">全港</button>
+        </div>
+      </header>
+      <aside id="panel">
+        <p id="hint">點選車站查看即將到站的班次。點選快拍點查看該處最新路面照片。</p>
+        <p id="load-note" role="status" aria-live="polite">正在準備地圖…</p>
+        <form id="search-form">
+          <label for="station-search">搜尋車站</label>
+          <input id="station-search" name="station" type="search" placeholder="例如金鐘、中環" autocomplete="off" />
+        </form>
+        <ul id="search-results"></ul>
+        <div id="detail" aria-live="polite">
+          <h2>尚未選擇</h2>
+          <p>在地圖上點一個車站，查看即將到站的班次。點一個快拍點，查看該處最新路面照片。</p>
+        </div>
+        <section class="legend-block">
+          <h2>十條港鐵綫</h2>
+          <ul id="legend"></ul>
+          <p class="fine">路綫按官方車站順序連接，並非實測路軌。馬場站以虛線表示，通常只在賽馬日有列車停靠。</p>
+        </section>
+        <section class="sources">
+          <h2>資料出處</h2>
+          <img src="/brand/landsd-logo.svg" alt="地政總署" />
+          <ul>
+            <li>底圖：OpenFreeMap、OpenMapTiles、OpenStreetMap。</li>
+            <li>車站位置：Map from Lands Department。地圖資料由地政總署提供。</li>
+            <li>到站班次：香港鐵路有限公司，約每 10 秒更新。</li>
+            <li>交通快拍：運輸署，照片約每 2 分鐘更新。</li>
+          </ul>
+        </section>
+      </aside>
+      <main id="map">
+        <div id="map-canvas"></div>
+        <div class="map-credit">
+          <img src="/brand/landsd-logo.svg" alt="地政總署" />
+          <span>Map from Lands Department<br />地圖資料由地政總署提供</span>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
