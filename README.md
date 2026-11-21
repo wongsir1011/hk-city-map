@@ -35,7 +35,7 @@ npm run prepare-data
 | 到站班次 | `https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php` |
 | 快拍位置和照片 | 運輸署交通情況快拍圖像 |
 
-路綫是按官方車站順序把站與站連起來，用來辨認路綫，不是實測路軌。瀏覽器直接向官方網址讀取到站資料和快拍，網頁本身不代為轉發。
+路綫形狀來自 OpenStreetMap 的港鐵路軌，車站位置仍來自地政總署。瀏覽器直接向官方網址讀取到站資料和快拍，網頁本身不代為轉發。
 
 ## 驗收後才發佈到 Cloudflare
 

@@ -11,8 +11,7 @@ export interface Station {
 export interface LineSegment {
   line: string
   kind: 'main' | 'branch' | 'race'
-  stations: string[]
-  coordinates: [number, number][]
+  paths: [number, number][][]
 }
 
 export interface Network {

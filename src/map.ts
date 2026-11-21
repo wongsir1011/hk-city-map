@@ -36,15 +36,19 @@ function motion(): number {
 function lineCollection(segments: LineSegment[]): FeatureCollection<LineString> {
   return {
     type: 'FeatureCollection',
-    features: segments.map((segment) => ({
-      type: 'Feature',
-      properties: {
-        line: segment.line,
-        kind: segment.kind,
-        color: lineStyle(segment.line).color,
-      },
-      geometry: { type: 'LineString', coordinates: segment.coordinates },
-    })),
+    features: segments.flatMap((segment) =>
+      segment.paths
+        .filter((path) => path.length >= 2)
+        .map((path) => ({
+          type: 'Feature' as const,
+          properties: {
+            line: segment.line,
+            kind: segment.kind,
+            color: lineStyle(segment.line).color,
+          },
+          geometry: { type: 'LineString' as const, coordinates: path },
+        })),
+    ),
   }
 }
 

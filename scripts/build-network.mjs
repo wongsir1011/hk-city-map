@@ -240,20 +240,133 @@ if (!race || race.stations.join(',') !== 'UNI,RAC,SHT') {
   throw new Error(`Racecourse branch: ${race?.stations}`)
 }
 
+const trackSegments = await fetchTrackSegments()
+
 const network = {
   builtAt: new Date().toISOString(),
   stationListModified: csvResponse.headers.get('last-modified'),
   stationCount: stationList.length,
   stations: stationList,
-  segments: segments.map((segment) => ({
-    line: segment.line,
-    kind: segment.kind,
-    stations: segment.stations,
-    coordinates: segment.stations.map((code) => {
-      const station = stations.get(code)
-      return [station.lng, station.lat]
-    }),
-  })),
+  segments: trackSegments,
+}
+
+function perpendicularDistance(point, start, end) {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  if (dx === 0 && dy === 0) return kmBetween(point, start)
+  const t = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / (dx * dx + dy * dy)
+  const clamped = Math.max(0, Math.min(1, t))
+  return kmBetween(point, [start[0] + clamped * dx, start[1] + clamped * dy])
+}
+
+function kmBetween(a, b) {
+  const earth = 6371
+  const dLat = ((b[1] - a[1]) * Math.PI) / 180
+  const dLng = ((b[0] - a[0]) * Math.PI) / 180
+  const lat1 = (a[1] * Math.PI) / 180
+  const lat2 = (b[1] * Math.PI) / 180
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * earth * Math.asin(Math.sqrt(h))
+}
+
+function simplifyPath(points, toleranceKm) {
+  if (points.length < 3) return points
+  let maxDistance = 0
+  let index = 0
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const distance = perpendicularDistance(points[i], points[0], points[points.length - 1])
+    if (distance > maxDistance) {
+      maxDistance = distance
+      index = i
+    }
+  }
+  if (maxDistance > toleranceKm) {
+    const left = simplifyPath(points.slice(0, index + 1), toleranceKm)
+    const right = simplifyPath(points.slice(index), toleranceKm)
+    return left.slice(0, -1).concat(right)
+  }
+  return [points[0], points[points.length - 1]]
+}
+
+function pathLength(path) {
+  let total = 0
+  for (let i = 1; i < path.length; i += 1) total += kmBetween(path[i - 1], path[i])
+  return total
+}
+
+async function fetchTrackSegments() {
+  const query = `[out:json][timeout:180];relation["type"="route"]["route"="subway"]["network"="港鐵 MTR"]["ref"~"^(AEL|TCL|TML|TKL|EAL|SIL|TWL|ISL|KTL|DRL)$"](22.13,113.80,22.58,114.50);out geom;`
+  const response = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'User-Agent': userAgent, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `data=${encodeURIComponent(query)}`,
+  })
+  if (!response.ok) throw new Error(`OpenStreetMap tracks returned ${response.status}`)
+  const data = await response.json()
+  const relations = data.elements ?? []
+  if (relations.length < 10) throw new Error(`Expected MTR route relations, received ${relations.length}`)
+
+  const normalWays = new Map()
+  const raceWays = new Map()
+  for (const relation of relations) {
+    const tags = relation.tags ?? {}
+    const line = tags.ref
+    if (!LINE_ORDER.includes(line)) continue
+    const via = `${tags.via ?? ''} ${tags['via:zh'] ?? ''} ${tags['via:en'] ?? ''}`
+    const raceRoute = /馬場|Racecourse/i.test(via)
+    const bucket = raceRoute ? raceWays : normalWays
+    if (!bucket.has(line)) bucket.set(line, new Map())
+    const ways = bucket.get(line)
+    for (const member of relation.members ?? []) {
+      if (member.type !== 'way' || !member.geometry || member.geometry.length < 2) continue
+      const role = member.role ?? ''
+      if (role.startsWith('platform') || role.startsWith('stop')) continue
+      const path = member.geometry.map((point) => [
+        Number(point.lon.toFixed(6)),
+        Number(point.lat.toFixed(6)),
+      ])
+      ways.set(member.ref, path)
+    }
+  }
+
+  const exported = []
+  for (const line of LINE_ORDER) {
+    const normal = normalWays.get(line)
+    if (!normal || normal.size === 0) throw new Error(`No track geometry for ${line}`)
+    const raceOnly = []
+    for (const [id, path] of raceWays.get(line) ?? []) {
+      if (!normal.has(id)) raceOnly.push(path)
+    }
+    exported.push({
+      line,
+      kind: 'main',
+      paths: [...normal.values()].map((path) => simplifyPath(path, 0.008)),
+    })
+    if (raceOnly.length > 0) {
+      exported.push({
+        line,
+        kind: 'race',
+        paths: raceOnly.map((path) => simplifyPath(path, 0.008)),
+      })
+    }
+  }
+
+  const mains = exported.filter((segment) => segment.kind === 'main')
+  if (mains.length !== LINE_ORDER.length) throw new Error('A line is missing its track')
+  const raceTrack = exported.find((segment) => segment.line === 'EAL' && segment.kind === 'race')
+  if (!raceTrack) throw new Error('The racecourse track was not found')
+  for (const segment of mains) {
+    const length = segment.paths.reduce((sum, path) => sum + pathLength(path), 0)
+    if (length < 3 || length > 120) throw new Error(`${segment.line} track length ${length.toFixed(1)} km looks wrong`)
+  }
+  console.log(
+    'Track lengths km:',
+    mains
+      .map((segment) => `${segment.line} ${segment.paths.reduce((sum, path) => sum + pathLength(path), 0).toFixed(1)}`)
+      .join(', '),
+  )
+  return exported
 }
 
 const output = new URL('../public/data/network.json', import.meta.url)
