@@ -55,9 +55,30 @@ export async function fetchSchedule(line: string, station: string): Promise<Sche
   }
 }
 
-export function formatWait(train: Train): string {
-  if (train.valid !== 'Y') return '時間未確定'
-  const minutes = Number(train.ttnt)
+const HONG_KONG_OFFSET_MS = 8 * 60 * 60 * 1000
+
+/** Parse an MTR timestamp as Hong Kong time, independent of the browser zone. */
+export function parseHongKongTime(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/)
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const hour = Number(match[4])
+  const minute = Number(match[5])
+  const second = Number(match[6])
+  const utc = Date.UTC(year, month - 1, day, hour, minute, second) - HONG_KONG_OFFSET_MS
+  const date = new Date(utc)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+export function formatWait(train: Train, referenceTime: string): string {
+  const arrival = parseHongKongTime(train.time)
+  const reference = parseHongKongTime(referenceTime)
+  if (!arrival || !reference) return '時間未確定'
+  let diffMs = arrival.getTime() - reference.getTime()
+  if (diffMs < -12 * 60 * 60 * 1000) diffMs += 24 * 60 * 60 * 1000
+  const minutes = Math.round(diffMs / 60000)
   if (!Number.isFinite(minutes)) return '時間未確定'
   if (minutes <= 0) return '即將開出或已到站'
   return `${minutes} 分鐘`

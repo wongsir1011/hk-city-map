@@ -38,6 +38,49 @@ export function renderLegend(list: HTMLElement): void {
   }
 }
 
+export function renderCameraResults(
+  list: HTMLElement,
+  sites: CameraSite[],
+  query: string,
+  status: 'loading' | 'ready' | 'unavailable',
+  onPick: (site: CameraSite) => void,
+): void {
+  list.replaceChildren()
+  const trimmed = query.trim()
+  if (!trimmed) return
+  if (status === 'loading') {
+    list.append(el('li', 'search-empty', '正在載入快拍點…'))
+    return
+  }
+  if (status === 'unavailable') {
+    list.append(el('li', 'search-empty', '暫時未能載入快拍點。'))
+    return
+  }
+  const folded = trimmed.toLowerCase()
+  const hits = sites
+    .filter(
+      (site) =>
+        site.description.includes(trimmed) ||
+        site.district.includes(trimmed) ||
+        site.region.includes(trimmed) ||
+        site.key.toLowerCase().includes(folded),
+    )
+    .slice(0, 8)
+  if (hits.length === 0) {
+    list.append(el('li', 'search-empty', '找不到這個快拍點。'))
+    return
+  }
+  for (const site of hits) {
+    const item = el('li')
+    const button = el('button', 'search-hit')
+    button.type = 'button'
+    button.textContent = site.description || site.key
+    button.addEventListener('click', () => onPick(site))
+    item.append(button)
+    list.append(item)
+  }
+}
+
 export function renderSearchResults(
   list: HTMLElement,
   stations: Station[],
@@ -82,13 +125,12 @@ function textOn(color: string): string {
 
 function appendLineTabs(parent: HTMLElement, station: Station, line: string, onLine: (line: string) => void): void {
   const tabs = el('div', 'line-tabs')
-  tabs.setAttribute('role', 'tablist')
   tabs.setAttribute('aria-label', '選擇路綫')
   for (const code of station.lines) {
     const style = lineStyle(code)
     const tab = el('button', 'line-tab', style.nameZh)
     tab.type = 'button'
-    tab.setAttribute('role', 'tab')
+    tab.dataset.line = code
     tab.setAttribute('aria-pressed', String(code === line))
     tab.style.borderColor = style.color
     if (code === line) {
@@ -111,9 +153,14 @@ function appendStationHead(parent: HTMLElement, station: Station, line: string, 
   appendLineTabs(parent, station, line, onLine)
 }
 
-function trainRow(train: Train, stationName: (code: string) => string, repeatDestination: boolean): HTMLElement {
+function trainRow(
+  train: Train,
+  referenceTime: string,
+  stationName: (code: string) => string,
+  repeatDestination: boolean,
+): HTMLElement {
   const row = el('li', 'train')
-  row.append(el('span', 'wait', formatWait(train)))
+  row.append(el('span', 'wait', formatWait(train, referenceTime)))
   const body = el('span', 'train-body')
   if (repeatDestination) body.append(el('span', 'dest', `往${stationName(train.dest)}`))
   const meta: string[] = []
@@ -132,6 +179,7 @@ function appendDirection(
   parent: HTMLElement,
   trains: Train[],
   otherHasTrains: boolean,
+  referenceTime: string,
   stationName: (code: string) => string,
 ): void {
   if (trains.length === 0) {
@@ -142,7 +190,9 @@ function appendDirection(
   const heading = destinations.length === 1 ? `往${destinations[0]}` : '這個方向'
   parent.append(el('h3', undefined, heading))
   const list = el('ol', 'trains')
-  for (const train of trains) list.append(trainRow(train, stationName, destinations.length > 1))
+  for (const train of trains) {
+    list.append(trainRow(train, referenceTime, stationName, destinations.length > 1))
+  }
   parent.append(list)
 }
 
@@ -203,8 +253,8 @@ function renderStationBody(
 
   const board = el('div', 'board')
   board.style.borderColor = lineStyle(line).color
-  appendDirection(board, schedule.up, schedule.down.length > 0, actions.stationName)
-  appendDirection(board, schedule.down, schedule.up.length > 0, actions.stationName)
+  appendDirection(board, schedule.up, schedule.down.length > 0, schedule.sysTime, actions.stationName)
+  appendDirection(board, schedule.down, schedule.up.length > 0, schedule.sysTime, actions.stationName)
   parent.append(board)
   parent.append(el('p', 'fine', '每次最多顯示四班。時間由港鐵到站資料提供。'))
 }

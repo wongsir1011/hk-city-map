@@ -3,7 +3,7 @@ import '@fontsource/noto-sans-tc/chinese-traditional-700.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchCameras, loadPhoto } from './cameras'
 import { createCityMap } from './map'
-import { renderDetail, renderLegend, renderSearchResults, type DetailState } from './panel'
+import { renderCameraResults, renderDetail, renderLegend, renderSearchResults, type DetailState } from './panel'
 import { fetchSchedule } from './schedule'
 import type { CameraSite, Network, Station } from './types'
 import './style.css'
@@ -11,9 +11,13 @@ import './style.css'
 const detail = document.querySelector<HTMLElement>('#detail')
 const results = document.querySelector<HTMLElement>('#search-results')
 const legend = document.querySelector<HTMLElement>('#legend')
+const mapNote = document.querySelector<HTMLElement>('#map-note')
 const loadNote = document.querySelector<HTMLElement>('#load-note')
 const search = document.querySelector<HTMLInputElement>('#station-search')
 const searchForm = document.querySelector<HTMLFormElement>('#search-form')
+const cameraSearch = document.querySelector<HTMLInputElement>('#camera-search')
+const cameraSearchForm = document.querySelector<HTMLFormElement>('#camera-search-form')
+const cameraResults = document.querySelector<HTMLElement>('#camera-results')
 const mapCanvas = document.querySelector<HTMLElement>('#map-canvas')
 const mtrToggle = document.querySelector<HTMLButtonElement>('#toggle-mtr')
 const cameraToggle = document.querySelector<HTMLButtonElement>('#toggle-cam')
@@ -27,9 +31,13 @@ function requireElement<T extends Element>(element: T | null, name: string): T {
 const detailEl = requireElement(detail, 'detail')
 const resultsEl = requireElement(results, 'search results')
 const legendEl = requireElement(legend, 'legend')
-const loadNoteEl = requireElement(loadNote, 'status')
+const mapNoteEl = requireElement(mapNote, 'map status')
+const loadNoteEl = requireElement(loadNote, 'camera status')
 const searchEl = requireElement(search, 'search')
 const searchFormEl = requireElement(searchForm, 'search form')
+const cameraSearchEl = requireElement(cameraSearch, 'camera search')
+const cameraSearchFormEl = requireElement(cameraSearchForm, 'camera search form')
+const cameraResultsEl = requireElement(cameraResults, 'camera results')
 const mapEl = requireElement(mapCanvas, 'map')
 const mtrToggleEl = requireElement(mtrToggle, 'mtr toggle')
 const cameraToggleEl = requireElement(cameraToggle, 'camera toggle')
@@ -78,7 +86,7 @@ async function main(): Promise<void> {
     onMapError: () => {
       if (mapFailed) return
       mapFailed = true
-      loadNoteEl.textContent = '暫時未能載入底圖。請檢查網路後重新整理。'
+      mapNoteEl.textContent = '暫時未能載入底圖。請檢查網路後重新整理。'
     },
   })
 
@@ -93,6 +101,9 @@ async function main(): Promise<void> {
   }
 
   function show(state: DetailState): void {
+    const active = document.activeElement
+    const focusedLine =
+      active instanceof HTMLButtonElement && detailEl.contains(active) ? active.dataset.line : undefined
     renderDetail(detailEl, state, {
       onLine: (line) => {
         if (state.kind === 'station' || state.kind === 'station-loading') void openStation(state.station, line)
@@ -102,6 +113,8 @@ async function main(): Promise<void> {
       },
       stationName: (code) => stationName(stations, code),
     })
+    if (!focusedLine) return
+    detailEl.querySelector<HTMLButtonElement>(`button[data-line="${CSS.escape(focusedLine)}"]`)?.focus()
   }
 
   async function openStation(station: Station, line: string): Promise<void> {
@@ -154,6 +167,21 @@ async function main(): Promise<void> {
     first?.click()
   })
 
+  let cameraSites: CameraSite[] = []
+  let cameraStatus: 'loading' | 'ready' | 'unavailable' = 'loading'
+  cameraSearchEl.addEventListener('input', () => {
+    renderCameraResults(cameraResultsEl, cameraSites, cameraSearchEl.value, cameraStatus, (site) => {
+      cameraSearchEl.value = ''
+      cameraResultsEl.replaceChildren()
+      void openCamera(site)
+    })
+  })
+  cameraSearchFormEl.addEventListener('submit', (event) => {
+    event.preventDefault()
+    const first = cameraResultsEl.querySelector<HTMLButtonElement>('button')
+    first?.click()
+  })
+
   mtrToggleEl.addEventListener('click', () => {
     const visible = mtrToggleEl.getAttribute('aria-pressed') !== 'true'
     mtrToggleEl.setAttribute('aria-pressed', String(visible))
@@ -168,11 +196,20 @@ async function main(): Promise<void> {
 
   loadNoteEl.textContent = '正在載入快拍點…'
   try {
-    const sites = await fetchCameras()
-    city.setCameras(sites)
-    loadNoteEl.textContent = `已載入 ${sites.length} 個快拍點。縮小地圖時，鄰近的點會合成一組。`
+    cameraSites = await fetchCameras()
+    cameraStatus = 'ready'
+    city.setCameras(cameraSites)
+    loadNoteEl.textContent = `已載入 ${cameraSites.length} 個快拍點。可搜尋地點，或在地圖上點選。縮小地圖時，鄰近的點會合成一組。`
   } catch {
+    cameraStatus = 'unavailable'
     loadNoteEl.textContent = '暫時未能載入快拍點。車站資料仍可使用。'
+  }
+  if (cameraSearchEl.value.trim()) {
+    renderCameraResults(cameraResultsEl, cameraSites, cameraSearchEl.value, cameraStatus, (site) => {
+      cameraSearchEl.value = ''
+      cameraResultsEl.replaceChildren()
+      void openCamera(site)
+    })
   }
 }
 

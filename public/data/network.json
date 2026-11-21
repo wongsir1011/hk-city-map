@@ -1,5 +1,5 @@
 {
-  "builtAt": "2026-11-21T02:51:19.236Z",
+  "builtAt": "2026-11-21T04:27:18.372Z",
   "stationListModified": "Tue, 21 Nov 2023 10:09:07 GMT",
   "stationCount": 98,
   "stations": [
@@ -1816,14 +1816,14 @@
       "line": "EAL",
       "kind": "race",
       "stations": [
-        "FOT",
+        "UNI",
         "RAC",
         "SHT"
       ],
       "coordinates": [
         [
-          114.198354,
-          22.395607
+          114.210325,
+          22.413624
         ],
         [
           114.203258,

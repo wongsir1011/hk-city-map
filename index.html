@@ -22,13 +22,19 @@
         </div>
       </header>
       <aside id="panel">
-        <p id="hint">點選車站查看即將到站的班次。點選快拍點查看該處最新路面照片。</p>
+        <p id="hint">點選車站查看即將到站的班次。搜尋或點選快拍點，查看該處最新路面照片。</p>
+        <p id="map-note" role="status" aria-live="polite"></p>
         <p id="load-note" role="status" aria-live="polite">正在準備地圖…</p>
         <form id="search-form">
           <label for="station-search">搜尋車站</label>
           <input id="station-search" name="station" type="search" placeholder="例如金鐘、中環" autocomplete="off" />
         </form>
         <ul id="search-results"></ul>
+        <form id="camera-search-form">
+          <label for="camera-search">搜尋快拍點</label>
+          <input id="camera-search" name="camera" type="search" placeholder="例如夏慤道、H214F" autocomplete="off" />
+        </form>
+        <ul id="camera-results"></ul>
         <div id="detail" aria-live="polite">
           <h2>尚未選擇</h2>
           <p>在地圖上點一個車站，查看即將到站的班次。點一個快拍點，查看該處最新路面照片。</p>
@@ -36,7 +42,7 @@
         <section class="legend-block">
           <h2>十條港鐵綫</h2>
           <ul id="legend"></ul>
-          <p class="fine">路綫按官方車站順序連接，並非實測路軌。馬場站以虛線表示，通常只在賽馬日有列車停靠。</p>
+          <p class="fine">路綫按官方車站順序連接，並非實測路軌。馬場站以虛線接在大學站與沙田站之間，通常只在賽馬日有列車停靠。</p>
         </section>
         <section class="sources">
           <h2>資料出處</h2>

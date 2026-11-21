@@ -91,20 +91,20 @@ h3 { margin-top: 14px; font-size: 1rem; }
   border-right: 1px solid var(--line);
 }
 
-#hint, #load-note, .english, .fine, .official { color: var(--muted); }
+#hint, #map-note, #load-note, .english, .fine, .official { color: var(--muted); }
 
-#hint, #load-note, .fine, .official, .english { margin: 8px 0 0; }
+#hint, #map-note, #load-note, .fine, .official, .english { margin: 8px 0 0; }
 
-#search-form { margin-top: 16px; }
+#search-form, #camera-search-form { margin-top: 16px; }
 
-#search-form label {
+#search-form label, #camera-search-form label {
   display: block;
   margin-bottom: 6px;
   font-size: 0.85rem;
   font-weight: 700;
 }
 
-#station-search {
+#station-search, #camera-search {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -112,7 +112,7 @@ h3 { margin-top: 14px; font-size: 1rem; }
   background: #fff;
 }
 
-#search-results, #legend, .sources ul, .trains {
+#search-results, #camera-results, #legend, .sources ul, .trains {
   margin: 8px 0 0;
   padding: 0;
   list-style: none;

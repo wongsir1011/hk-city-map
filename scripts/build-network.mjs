@@ -205,7 +205,7 @@ for (const line of LINE_ORDER) {
     }
   }
 }
-segments.push({ line: 'EAL', kind: 'race', stations: ['FOT', 'RAC', 'SHT'] })
+segments.push({ line: 'EAL', kind: 'race', stations: ['UNI', 'RAC', 'SHT'] })
 
 let longest = { km: 0, from: '', to: '', line: '' }
 for (const segment of segments) {
@@ -235,6 +235,10 @@ if (!ealMain.stations.includes('LOW') || !ealMain.stations.includes('ADM') || ea
 }
 if (ealBranch.stations.join(',') !== 'LMC,SHS') throw new Error(`Lok Ma Chau branch: ${ealBranch.stations}`)
 if (tklBranch.stations.join(',') !== 'LHP,TKO') throw new Error(`LOHAS branch: ${tklBranch.stations}`)
+const race = segments.find((segment) => segment.kind === 'race')
+if (!race || race.stations.join(',') !== 'UNI,RAC,SHT') {
+  throw new Error(`Racecourse branch: ${race?.stations}`)
+}
 
 const network = {
   builtAt: new Date().toISOString(),
