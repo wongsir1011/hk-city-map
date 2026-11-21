@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "prepare-data": "node scripts/build-network.mjs",
+    "prepare-data": "node scripts/build-network.mjs && node scripts/build-pairs.mjs && node scripts/build-cameras.mjs",
+    "snapshot": "node snapshot/run.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4179 --strictPort"

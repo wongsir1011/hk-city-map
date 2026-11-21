@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchCameras, loadPhoto } from './cameras'
 import { createCityMap } from './map'
 import { renderCameraResults, renderDetail, renderLegend, renderSearchResults, type DetailState } from './panel'
-import { fetchSchedule } from './schedule'
+import { fetchSchedule, formatClock } from './schedule'
 import { startTrains, type TrainStatus } from './trains'
 import type { CameraSite, MovingTrain, Network, Station } from './types'
 import './style.css'
@@ -74,11 +74,30 @@ function stationName(stations: Map<string, Station>, code: string): string {
   return stations.get(code)?.nameZh ?? code
 }
 
-function describeTrains(status: TrainStatus): string {
+function describeTrains(status: TrainStatus, updatedAt?: string): string {
   if (status === 'zoomed-out') return '放大地圖後，列車會沿路軌移動。'
   if (status === 'loading') return '正在估算列車位置…'
   if (status === 'limited') return '暫時未能更新列車位置。列車會暫停，稍後再試。'
+  if (status === 'fallback') return '全港快照暫時中斷，改為查詢畫面內最多 12 個車站。'
+  const clock = updatedAt ? formatClock(updatedAt) : ''
+  if (clock) return `列車位置按到站時間估算，快照時間 ${clock}，並非即時定位。`
   return '列車位置按到站時間估算，大約每 30 秒更新，並非即時定位。'
+}
+
+async function loadSnapshotUrl(): Promise<string | null> {
+  try {
+    const response = await fetch('/runtime.json', { cache: 'no-store' })
+    if (!response.ok) return null
+    const body: unknown = await response.json()
+    if (!body || typeof body !== 'object') return null
+    const url = (body as { trainSnapshotUrl?: unknown }).trainSnapshotUrl
+    if (typeof url !== 'string' || url === '') return null
+    if (url.startsWith('/') && !url.startsWith('//')) return url
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' ? parsed.toString() : null
+  } catch {
+    return null
+  }
 }
 
 async function main(): Promise<void> {
@@ -232,9 +251,10 @@ async function main(): Promise<void> {
     network,
     () => city.getViewport(),
     (moving) => city.setTrains(moving),
-    (status) => {
-      if (trainToggleEl.getAttribute('aria-pressed') === 'true') trainNoteEl.textContent = describeTrains(status)
+    (status, updatedAt) => {
+      if (trainToggleEl.getAttribute('aria-pressed') === 'true') trainNoteEl.textContent = describeTrains(status, updatedAt)
     },
+    await loadSnapshotUrl(),
   )
 
   loadNoteEl.textContent = '正在載入快拍點…'

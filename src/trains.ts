@@ -1,13 +1,15 @@
 import { fetchSchedule, parseHongKongTime } from './schedule'
+import { fetchTrainSnapshot, type TrainSnapshot } from './snapshot'
 import type { MovingTrain, Network, Station, TrackRoute, Train } from './types'
 
 const MIN_ZOOM = 12
 const MAX_QUERIES = 12
-const POLL_MS = 30_000
+const DIRECT_MS = 30_000
+const SNAPSHOT_MS = 60_000
 const CONCURRENCY = 4
 const SPEED_KMH = 40
 
-export type TrainStatus = 'zoomed-out' | 'loading' | 'live' | 'limited'
+export type TrainStatus = 'zoomed-out' | 'loading' | 'live' | 'limited' | 'fallback'
 
 interface Viewport {
   zoom: number
@@ -159,7 +161,8 @@ export function startTrains(
   network: Network,
   view: () => Viewport,
   onTrains: (trains: MovingTrain[]) => void,
-  onStatus: (status: TrainStatus) => void,
+  onStatus: (status: TrainStatus, updatedAt?: string) => void,
+  snapshotUrl: string | null,
 ): TrainTracker {
   const routes = indexRoutes(network)
   let enabled = true
@@ -167,6 +170,9 @@ export function startTrains(
   let polling = false
   let lastPoll = 0
   let limitedUntil = 0
+  let gapMs = snapshotUrl ? SNAPSHOT_MS : DIRECT_MS
+  let snapshotFailures = 0
+  let wasZoomedOut = true
   let sightings: Sighting[] = []
   const shown = new Map<string, { lng: number; lat: number }>()
 
@@ -202,7 +208,7 @@ export function startTrains(
     onTrains(trains.slice(0, 40))
   }
 
-  function queriesFor(viewport: Viewport): { line: string; station: Station; distance: number }[] {
+  function queriesFor(viewport: Viewport, limit: number): { line: string; station: Station; distance: number }[] {
     const queries: { line: string; station: Station; distance: number }[] = []
     for (const station of network.stations) {
       if (station.lng < viewport.west || station.lng > viewport.east || station.lat < viewport.south || station.lat > viewport.north) {
@@ -211,7 +217,7 @@ export function startTrains(
       const distance = kmBetween([viewport.centerLng, viewport.centerLat], [station.lng, station.lat])
       for (const line of station.lines) queries.push({ line, station, distance })
     }
-    return queries.sort((a, b) => a.distance - b.distance).slice(0, MAX_QUERIES)
+    return queries.sort((a, b) => a.distance - b.distance).slice(0, limit)
   }
 
   function addSighting(found: Sighting[], line: string, next: string, train: Train): void {
@@ -232,51 +238,103 @@ export function startTrains(
     })
   }
 
+  function sightingsFromSnapshot(viewport: Viewport, snapshot: TrainSnapshot): Sighting[] {
+    const found: Sighting[] = []
+    for (const query of queriesFor(viewport, 500)) {
+      const board = snapshot.boards[`${query.line}-${query.station.code}`]
+      if (!board || board.status !== 1) continue
+      for (const train of [...board.up, ...board.down]) addSighting(found, query.line, query.station.code, train)
+    }
+    const unique = new Map<string, Sighting>()
+    for (const sighting of found) if (!unique.has(sighting.id)) unique.set(sighting.id, sighting)
+    return [...unique.values()]
+  }
+
+  async function applySnapshot(): Promise<'ok' | 'retry' | 'fallback'> {
+    if (!snapshotUrl) return 'fallback'
+    const snapshot = await fetchTrainSnapshot(snapshotUrl)
+    if (!snapshot) {
+      snapshotFailures += 1
+      return snapshotFailures < 2 ? 'retry' : 'fallback'
+    }
+    snapshotFailures = 0
+    sightings = sightingsFromSnapshot(view(), snapshot)
+    publish()
+    onStatus('live', snapshot.updatedAt)
+    return 'ok'
+  }
+
+  async function pollDirect(degraded: boolean): Promise<void> {
+    if (Date.now() < limitedUntil) {
+      onStatus('limited')
+      return
+    }
+    const viewport = view()
+    const kept = new Map(sightings.map((sighting) => [sighting.id, sighting]))
+    let limited = false
+    let published = false
+    await runPool(queriesFor(viewport, MAX_QUERIES), CONCURRENCY, async (query) => {
+      const result = await fetchSchedule(query.line, query.station.code)
+      if (!result.ok) {
+        if (result.reason === 'rate') limited = true
+        return
+      }
+      for (const [id, sighting] of kept) {
+        if (sighting.line === query.line && sighting.next === query.station.code) kept.delete(id)
+      }
+      if (result.schedule.status === 1) {
+        const found: Sighting[] = []
+        for (const train of [...result.schedule.up, ...result.schedule.down]) {
+          addSighting(found, query.line, query.station.code, train)
+        }
+        for (const sighting of found) kept.set(sighting.id, sighting)
+      }
+      sightings = [...kept.values()]
+      published = true
+      publish()
+    })
+    if (limited) {
+      limitedUntil = Date.now() + DIRECT_MS * 2
+      onStatus('limited')
+    } else if (degraded) {
+      onStatus('fallback')
+    } else {
+      onStatus('live')
+    }
+    if (!published) publish()
+  }
+
   async function poll(force = false): Promise<void> {
     if (stopped || !enabled || polling) return
     const viewport = view()
     if (viewport.zoom < MIN_ZOOM) {
+      wasZoomedOut = true
       sightings = []
       publish()
       onStatus('zoomed-out')
       return
     }
+    wasZoomedOut = false
     const now = Date.now()
-    if (!force && (now < limitedUntil || now - lastPoll < POLL_MS - 2000)) return
+    if (!force && now - lastPoll < gapMs - 2000) return
     polling = true
     lastPoll = now
     if (sightings.length === 0) onStatus('loading')
-    const kept = new Map(sightings.map((sighting) => [sighting.id, sighting]))
-    let limited = false
-    let published = false
     try {
-      await runPool(queriesFor(viewport), CONCURRENCY, async (query) => {
-        const result = await fetchSchedule(query.line, query.station.code)
-        if (!result.ok) {
-          if (result.reason === 'rate') limited = true
+      if (snapshotUrl) {
+        const outcome = await applySnapshot()
+        if (outcome === 'ok') {
+          gapMs = SNAPSHOT_MS
           return
         }
-        for (const [id, sighting] of kept) {
-          if (sighting.line === query.line && sighting.next === query.station.code) kept.delete(id)
+        if (outcome === 'retry') {
+          gapMs = SNAPSHOT_MS
+          onStatus('limited')
+          return
         }
-        if (result.schedule.status === 1) {
-          const found: Sighting[] = []
-          for (const train of [...result.schedule.up, ...result.schedule.down]) {
-            addSighting(found, query.line, query.station.code, train)
-          }
-          for (const sighting of found) kept.set(sighting.id, sighting)
-        }
-        sightings = [...kept.values()]
-        published = true
-        publish()
-      })
-      if (limited) {
-        limitedUntil = Date.now() + POLL_MS * 2
-        onStatus('limited')
-      } else {
-        onStatus('live')
+        gapMs = DIRECT_MS
       }
-      if (!published) publish()
+      await pollDirect(Boolean(snapshotUrl))
     } finally {
       polling = false
     }
@@ -287,19 +345,22 @@ export function startTrains(
   }, 1000)
   const timer = window.setInterval(() => {
     void poll(false)
-  }, POLL_MS)
+  }, DIRECT_MS)
   void poll(true)
 
   return {
     onView() {
       if (!enabled || stopped) return
       if (view().zoom < MIN_ZOOM) {
+        wasZoomedOut = true
         sightings = []
         publish()
         onStatus('zoomed-out')
         return
       }
-      void poll(Date.now() - lastPoll >= POLL_MS)
+      const entered = wasZoomedOut
+      wasZoomedOut = false
+      void poll(entered || Date.now() - lastPoll >= gapMs)
     },
     setEnabled(next) {
       enabled = next

@@ -1,0 +1,20 @@
+{
+  "name": "hk-train-snapshot",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-21",
+  "observability": {
+    "enabled": false
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "r2_buckets": [
+    {
+      "binding": "SNAPSHOTS",
+      "bucket_name": "hk-train-snapshot"
+    }
+  ],
+  "limits": {
+    "subrequests": 200
+  }
+}

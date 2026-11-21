@@ -276,7 +276,7 @@ export function renderDetail(root: HTMLElement, state: DetailState, actions: Det
         state.train.minutes <= 0 ? '即將到達下一站。' : `大約 ${state.train.minutes} 分鐘到達下一站。`,
       ),
     )
-    root.append(el('p', 'fine', '位置按到站時間估算，大約每 30 秒更新，並非即時定位。'))
+    root.append(el('p', 'fine', '位置按到站時間估算，並非即時定位。'))
     return
   }
 

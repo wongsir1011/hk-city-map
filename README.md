@@ -35,22 +35,33 @@ npm run prepare-data
 | 到站班次 | `https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php` |
 | 快拍位置和照片 | 運輸署交通情況快拍圖像 |
 
-路綫形狀來自 OpenStreetMap 的港鐵路軌，車站位置仍來自地政總署。瀏覽器直接向官方網址讀取到站資料和快拍，網頁本身不代為轉發。放大到街道範圍後，地圖按到站時間在路軌上估算列車位置，大約每 30 秒更新，並非即時定位；畫面一次最多查詢 12 個車站。
+路綫形狀來自 OpenStreetMap 的港鐵路軌，車站位置仍來自地政總署。快拍名單打包在 `public/data/cameras.json`，照片仍在點開時向運輸署讀取。放大到街道範圍後，地圖按到站時間在路軌上估算列車位置，並非即時定位。
 
-## 驗收後才發佈到 Cloudflare
+`public/runtime.json` 的 `trainSnapshotUrl` 若是一個 `https` 網址，所有訪客約每分鐘讀同一份全港快照。這個網址留空時，每人放大後約每 30 秒直接查詢畫面內最多 12 個車站。快照連續兩次讀不到，才退回這 12 次查詢。
 
-現階段只在開發環境預覽，尚未發佈。驗收通過後，用 Cloudflare Workers 免費方案和平台提供的 `workers.dev` 網址：
+## 全港列車快照
+
+`snapshot/` 是獨立的定時程式，大約每分鐘向港鐵查完全部車站路綫，把結果寫進 R2 的 `trains.json`。地圖網站本身保持靜態，不代為轉發。
+
+這條路要一份你擁有的網域，以及 Cloudflare Workers 付費方案。付費方案最低每月 5 美元。請在帳戶把超額消費上限設為 0，避免人數上升時自動加價。網域費用是註冊商的年費。R2 每月寫入約 4 萬次，在免費額以內。
+
+`workers.dev` 和 `r2.dev` 每個訪客的讀取都會計費。網域要接到 R2，並加一條快取規則，把 `trains.json` 在邊緣快取 60 秒。JSON 預設不會被快取。不要開啟 Workers Caching，開啟後每次讀取都會計入 Worker 費用。
+
+免費方案每次最多 50 個對外請求，不足以一次查完約 121 個車站路綫，所以這個程式要用付費方案。
 
 ```bash
-npm run build
-npx wrangler deploy
+node scripts/build-pairs.mjs
+cd snapshot
+npx wrangler@4 login
+npx wrangler@4 r2 bucket create hk-train-snapshot
+npx wrangler@4 r2 bucket cors set hk-train-snapshot --file cors.json --force
+npx wrangler@4 deploy
 ```
 
-發佈前請確認：
+部署後，在 R2 的桶接上你的網域，快取規則選「符合快取」並把邊緣快取時間設為 60 秒。然後把 `https://你的網域/trains.json` 寫進 `public/runtime.json`，再重新發佈地圖。
 
-- 帳戶停留在 Workers 免費方案，不要升級每月 5 美元的付費方案。
-- 不要開啟 Workers Caching。官方說明指出，開啟後靜態檔的快取請求也會計入 Worker 請求。
-- 不要購買自訂網域。網址會是 `hk-smart-city-map.<帳號>.workers.dev`。
-- 這個設定只上傳 `dist` 裡的靜態檔。靜態請求不計次數，也不另收儲存費。課堂使用預計費用是 0 美元。
+本機可以先跑一輪，看看快照內容：
 
-`workers.dev` 網址是公開的，知道連結的人都能打開。
+```bash
+npm run snapshot -- /tmp/trains.json
+```
